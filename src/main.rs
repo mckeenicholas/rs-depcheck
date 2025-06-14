@@ -1,289 +1,395 @@
-mod parser;
+use clap::Parser;
+use std::path::PathBuf;
+use std::{collections::{HashMap, HashSet}, error::Error, path::Path};
+use walkdir::{DirEntry, WalkDir};
 
-use anyhow::{Context, Result};
-use lazy_static::lazy_static;
-use parser::{DepParser, JsParser, SvelteParser, TsParser, VueParser};
-use serde::Deserialize;
-use std::{
-    collections::{HashMap, HashSet},
-    fs,
-    path::Path,
-};
-use walkdir::WalkDir;
+use parser::parse_and_analyize;
 
-const IGNORE_CONTENTS: &str = include_str!("exclude_list.txt");
+pub mod package_json_reader;
+pub mod parser;
 
-lazy_static! {
-    static ref IGNORE_FILES: HashSet<String> = {
-        IGNORE_CONTENTS
-            .lines()
-            .map(|line| line.trim())
-            .filter(|line| !line.is_empty() && !line.starts_with('#'))
-            .map(|line| line.to_string())
-            .collect()
-    };
+use package_json_reader::read_package_json;
+
+use crate::{package_json_reader::PackageDependencies, parser::ModuleAnalysis};
+
+const DEFAULT_PACKAGE_JSON_PATH: &str = "package.json";
+const TARGET_EXTENSIONS: &[&str] = &["js", "jsx", "ts", "tsx", "vue", "svelte"];
+const SKIP_DIRS: &[&str] = &["node_modules", "dist", "build"];
+
+#[derive(Parser)]
+struct Args {
+    /// Directory to search
+    #[arg(short, long, default_value = ".")]
+    dir: String,
+    /// package.json location
+    #[arg(long, default_value = DEFAULT_PACKAGE_JSON_PATH)]
+    pkg: String,
 }
 
-#[derive(Deserialize, Debug)]
-struct PackageJson {
-    dependencies: Option<HashMap<String, String>>,
-    #[serde(rename = "devDependencies")]
-    dev_dependencies: Option<HashMap<String, String>>,
-    #[serde(rename = "peerDependencies")]
-    peer_dependencies: Option<HashMap<String, String>>,
-    #[serde(rename = "optionalDependencies")]
-    optional_dependencies: Option<HashMap<String, String>>,
+#[derive(Debug)]
+struct DependencyIssues {
+    unused_dependencies: Vec<String>,
+    missing_dependencies: Vec<String>,
+    unused_exports: Vec<(PathBuf, String)>, // (file_path, export_name)
+    unused_imports: Vec<(PathBuf, String)>, // (file_path, import_name)
+    unused_files: Vec<PathBuf>,
 }
 
-#[derive(Debug, Default)]
-struct PackageDependencies {
-    dependencies: HashSet<String>,
-    dev_dependencies: HashSet<String>,
-    peer_dependencies: HashSet<String>,
-    optional_dependencies: HashSet<String>,
+// Optimized data structures for faster lookups
+#[derive(Debug)]
+struct OptimizedDependencyData {
+    // Map from (file_path, export_name) to whether it's used
+    exports: HashMap<(PathBuf, String), bool>,
+    // Map from import_module_path to list of (importing_file, imported_name)
+    imports_by_module: HashMap<String, Vec<(PathBuf, String)>>,
+    // Set of all imported module paths
+    imported_modules: HashSet<String>,
+    // Map from file to its resolved canonical path for fast lookups
+    file_canonical_paths: HashMap<PathBuf, PathBuf>,
+    // Map from canonical_path to original file path
+    canonical_to_original: HashMap<PathBuf, PathBuf>,
+    // All unused imports from individual file analysis
+    unused_imports: Vec<(PathBuf, String)>,
 }
 
-// Checks if an import path matches a package dependency
-fn is_dependency_used(import_path: &str, package_name: &str) -> bool {
-    // Exact match
-    if import_path == package_name {
-        return true;
-    }
-
-    // Subpath imports (e.g., "react/jsx-runtime" matches "react")
-    if import_path.starts_with(&format!("{}/", package_name)) {
-        return true;
-    }
-
-    // Handle scoped packages (e.g., "@babel/core")
-    // TODO: Fix this as '@' could be used as an import alais
-    if package_name.starts_with('@') && import_path.starts_with(package_name) {
-        return true;
-    }
-
-    false
+fn in_ignore_list(entry: &DirEntry) -> bool {
+    entry
+        .file_name()
+        .to_str()
+        .map(|s| (s != "." && s.starts_with(".")) || SKIP_DIRS.contains(&s))
+        .unwrap_or(false)
 }
 
-fn extract_dependency_names(deps_map: Option<HashMap<String, String>>) -> HashSet<String> {
-    deps_map
-        .map(|map| map.into_keys().collect())
-        .unwrap_or_default()
-}
+fn analyize_project<P: AsRef<Path>>(root_dir: P) -> HashMap<PathBuf, ModuleAnalysis> {
+    let mut src_file_info = HashMap::new();
 
-fn read_package_json_dependencies<P: AsRef<Path>>(path: P) -> Result<PackageDependencies> {
-    let content = fs::read_to_string(&path).with_context(|| {
-        format!(
-            "Failed to read package.json from {}",
-            path.as_ref().display()
-        )
-    })?;
-
-    let package_data: PackageJson = serde_json::from_str(&content).with_context(|| {
-        format!(
-            "Failed to parse package.json from {}",
-            path.as_ref().display()
-        )
-    })?;
-
-    Ok(PackageDependencies {
-        dependencies: extract_dependency_names(package_data.dependencies),
-        dev_dependencies: extract_dependency_names(package_data.dev_dependencies),
-        peer_dependencies: extract_dependency_names(package_data.peer_dependencies),
-        optional_dependencies: extract_dependency_names(package_data.optional_dependencies),
-    })
-}
-
-fn process_source_files(dir: &str) -> Result<HashSet<String>> {
-    let mut all_dependencies_in_code = HashSet::new();
-
-    for entry_result in WalkDir::new(dir).into_iter().filter_entry(|e| {
-        let should_ignore = e.path().components().any(|component| {
-            if let Some(name_osstr) = component.as_os_str().to_str() {
-                IGNORE_FILES.contains(name_osstr)
-            } else {
-                false
-            }
-        });
-
-        !should_ignore
-    }) {
-        let entry = match entry_result {
-            Ok(e) => e,
-            Err(err) => {
-                eprintln!("Error accessing entry: {}", err);
+    let walker = WalkDir::new(root_dir)
+        .into_iter()
+        .filter_entry(|e| !in_ignore_list(e));
+    for file in walker {
+        let dir_entry = match file {
+            Ok(dir_entry) => dir_entry,
+            Err(e) => {
+                eprintln!("Error: {}", e);
                 continue;
             }
         };
 
-        if entry.file_type().is_file() {
-            let path = entry.path();
-            if let Some(ext_os_str) = path.extension() {
-                if let Some(ext) = ext_os_str.to_str() {
-                    let dependencies_result = match ext {
-                        "js" | "mjs" | "cjs" | "jsx" => JsParser::parse(path),
-                        "ts" | "mts" | "cts" | "tsx" => TsParser::parse(path),
-                        "vue" => VueParser::parse(path),
-                        "svelte" => SvelteParser::parse(path),
-                        _ => continue,
-                    };
+        let path = dir_entry.path();
 
-                    match dependencies_result {
-                        Ok(deps) => {
-                            all_dependencies_in_code.extend(deps);
-                        }
-                        Err(e) => {
-                            eprintln!("Error parsing file {}: {:?}", path.display(), e);
-                        }
+        if !dir_entry.file_type().is_file() {
+            continue;
+        }
+
+        let extension = match path.extension() {
+            Some(ext) => ext.to_str().unwrap_or(""),
+            None => continue,
+        };
+
+        if !TARGET_EXTENSIONS.contains(&extension) {
+            continue;
+        }
+
+        let results = parse_and_analyize(path);
+        match results {
+            Ok(module_analysis) => {
+                src_file_info.insert(path.to_owned(), module_analysis);
+            }
+            Err(e) => eprintln!("Failed to analyze {:?}: {}", path, e),
+        }
+    }
+
+    src_file_info
+}
+
+fn build_optimized_data(deps: &HashMap<PathBuf, ModuleAnalysis>) -> OptimizedDependencyData {
+    let mut exports = HashMap::new();
+    let mut imports_by_module = HashMap::new();
+    let mut imported_modules = HashSet::new();
+    let mut file_canonical_paths = HashMap::new();
+    let mut canonical_to_original = HashMap::new();
+    let mut unused_imports = Vec::new();
+
+    // Pre-compute canonical paths for all files
+    for file_path in deps.keys() {
+        if let Ok(canonical) = file_path.canonicalize() {
+            file_canonical_paths.insert(file_path.clone(), canonical.clone());
+            canonical_to_original.insert(canonical, file_path.clone());
+        }
+    }
+
+    for (file_path, analysis) in deps {
+        // Process exports
+        for export in &analysis.exports {
+            if !export.is_default && !export.is_re_export {
+                exports.insert((file_path.clone(), export.exported_name.clone()), false);
+            }
+        }
+
+        // Process imports
+        for import in &analysis.imports {
+            imported_modules.insert(import.module_path.clone());
+            
+            // For relative imports, try to resolve to actual files
+            if import.module_path.starts_with('.') {
+                if let Some(resolved_file) = resolve_import_to_file(&import.module_path, file_path, &file_canonical_paths) {
+                    // Mark the export as used if it exists
+                    let key = (resolved_file, import.imported_name.clone());
+                    if exports.contains_key(&key) {
+                        exports.insert(key, true);
                     }
+                }
+            }
+            
+            imports_by_module
+                .entry(import.module_path.clone())
+                .or_insert_with(Vec::new)
+                .push((file_path.clone(), import.imported_name.clone()));
+        }
+
+        // Collect unused imports
+        for unused_import in &analysis.unused_imports {
+            unused_imports.push((
+                file_path.clone(),
+                unused_import.import_info.local_name.clone(),
+            ));
+        }
+    }
+
+    OptimizedDependencyData {
+        exports,
+        imports_by_module,
+        imported_modules,
+        file_canonical_paths,
+        canonical_to_original,
+        unused_imports,
+    }
+}
+
+fn resolve_import_to_file(
+    import_path: &str,
+    from_file: &Path,
+    file_canonical_paths: &HashMap<PathBuf, PathBuf>,
+) -> Option<PathBuf> {
+    if !import_path.starts_with('.') {
+        return None;
+    }
+
+    let from_dir = from_file.parent()?;
+    let resolved_import_path = from_dir.join(import_path);
+
+    // Try different extensions
+    const EXTENSIONS_TO_TRY: &[&str] = &["", "js", "jsx", "ts", "tsx", "svelte"];
+    
+    for ext in EXTENSIONS_TO_TRY {
+        let mut path_with_ext = resolved_import_path.as_os_str().to_owned();
+        if !ext.is_empty() {
+            path_with_ext.push(".");
+            path_with_ext.push(ext);
+        }
+
+        let candidate_path = PathBuf::from(path_with_ext);
+        if let Ok(canonical) = candidate_path.canonicalize() {
+            // Find the original path from our file set
+            for (original_path, canonical_path) in file_canonical_paths {
+                if canonical_path == &canonical {
+                    return Some(original_path.clone());
                 }
             }
         }
     }
 
-    Ok(all_dependencies_in_code)
-}
-
-fn find_used_dependencies(
-    dependencies_in_code: &HashSet<String>,
-    package_dependencies: &HashSet<String>,
-) -> HashSet<String> {
-    let mut found_deps = HashSet::new();
-
-    for import_path in dependencies_in_code {
-        for package_dep in package_dependencies {
-            if is_dependency_used(import_path, package_dep) {
-                found_deps.insert(package_dep.clone());
+    // Try index files
+    for ext in TARGET_EXTENSIONS {
+        let index_path = resolved_import_path.join(format!("index.{}", ext));
+        if let Ok(canonical) = index_path.canonicalize() {
+            for (original_path, canonical_path) in file_canonical_paths {
+                if canonical_path == &canonical {
+                    return Some(original_path.clone());
+                }
             }
         }
     }
 
-    found_deps
+    None
 }
 
-fn print_unused_dependencies(dep_type: &str, unused_deps: &[&String]) {
-    if !unused_deps.is_empty() {
-        println!("=== Found unused {} ===", dep_type);
-        for dep in unused_deps {
-            println!(" - {}", dep);
+fn check_dependency_graph(
+    deps: HashMap<PathBuf, ModuleAnalysis>,
+    package_info: PackageDependencies,
+) -> DependencyIssues {
+    let optimized_data = build_optimized_data(&deps);
+    
+    let mut issues = DependencyIssues {
+        unused_dependencies: Vec::new(),
+        missing_dependencies: Vec::new(),
+        unused_exports: Vec::new(),
+        unused_imports: optimized_data.unused_imports,
+        unused_files: Vec::new(),
+    };
+
+    // Check for unused dependencies - O(n)
+    let all_declared_deps: HashSet<String> = package_info
+        .dependencies
+        .iter()
+        .chain(package_info.dev_dependencies.iter())
+        .chain(package_info.peer_dependencies.iter())
+        .cloned()
+        .collect();
+
+    for declared_dep in &all_declared_deps {
+        let is_used = optimized_data.imported_modules.iter().any(|imported| {
+            imported == declared_dep
+                || imported.starts_with(&format!("{}/", declared_dep))
+                || imported.starts_with(&format!("@{}/", declared_dep))
+        });
+
+        if !is_used {
+            issues.unused_dependencies.push(declared_dep.clone());
+        }
+    }
+
+    // Check for missing dependencies - O(n)
+    for imported_module in &optimized_data.imported_modules {
+        if imported_module.starts_with('.') {
+            continue;
+        }
+
+        let package_name = if imported_module.starts_with('@') {
+            imported_module
+                .split('/')
+                .take(2)
+                .collect::<Vec<_>>()
+                .join("/")
+        } else {
+            imported_module
+                .split('/')
+                .next()
+                .unwrap_or(imported_module)
+                .to_string()
+        };
+
+        if !all_declared_deps.contains(&package_name) {
+            issues.missing_dependencies.push(package_name);
+        }
+    }
+
+    issues.missing_dependencies.sort();
+    issues.missing_dependencies.dedup();
+
+    // Check for unused exports - O(n) instead of O(n²)
+    for ((file_path, export_name), is_used) in &optimized_data.exports {
+        if !is_used {
+            issues
+                .unused_exports
+                .push((file_path.clone(), export_name.clone()));
+        }
+    }
+
+    // Check for unused files
+    let entry_files = find_entry_files(&deps);
+    let mut used_files = HashSet::new();
+
+    for entry_file in &entry_files {
+        mark_file_as_used(entry_file, &deps, &mut used_files, &optimized_data.file_canonical_paths);
+    }
+
+    for file_path in deps.keys() {
+        if !used_files.contains(file_path) {
+            issues.unused_files.push(file_path.clone());
+        }
+    }
+
+    issues
+}
+
+fn find_entry_files(deps: &HashMap<PathBuf, ModuleAnalysis>) -> Vec<PathBuf> {
+    let mut entry_files = Vec::new();
+    const ENTRY_PATTERNS: &[&str] = &["index", "main", "app", "entry"];
+
+    for file_path in deps.keys() {
+        let file_stem = file_path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+        if ENTRY_PATTERNS.contains(&file_stem) {
+            entry_files.push(file_path.clone());
+        }
+    }
+
+    if entry_files.is_empty() {
+        // If no obvious entry files, use all files as potential entries
+        entry_files.extend(deps.keys().cloned());
+    }
+
+    entry_files
+}
+
+fn mark_file_as_used(
+    file_path: &PathBuf,
+    deps: &HashMap<PathBuf, ModuleAnalysis>,
+    used_files: &mut HashSet<PathBuf>,
+    file_canonical_paths: &HashMap<PathBuf, PathBuf>,
+) {
+    if used_files.contains(file_path) {
+        return;
+    }
+
+    used_files.insert(file_path.clone());
+
+    if let Some(analysis) = deps.get(file_path) {
+        for import in &analysis.imports {
+            if let Some(resolved_file) = resolve_import_to_file(&import.module_path, file_path, file_canonical_paths) {
+                mark_file_as_used(&resolved_file, deps, used_files, file_canonical_paths);
+            }
         }
     }
 }
 
-fn get_unused_dependencies<'a>(
-    package_deps: &'a HashSet<String>,
-    found_deps: &'a HashSet<String>,
-) -> Vec<&'a String> {
-    let mut unused: Vec<&'a String> = package_deps.difference(found_deps).collect();
-    unused.sort_unstable();
-    unused
+fn print_dependency_issues(issues: &DependencyIssues) {
+    if !issues.unused_dependencies.is_empty() {
+        println!("\n=== UNUSED DEPENDENCIES ===");
+        for dep in &issues.unused_dependencies {
+            println!("  {}", dep);
+        }
+    }
+
+    if !issues.missing_dependencies.is_empty() {
+        println!("\n=== MISSING DEPENDENCIES ===");
+        for dep in &issues.missing_dependencies {
+            println!("  {}", dep);
+        }
+    }
+
+    if !issues.unused_exports.is_empty() {
+        println!("\n=== UNUSED EXPORTS ===");
+        for (file, export) in &issues.unused_exports {
+            println!("  {} exports '{}'", file.display(), export);
+        }
+    }
+
+    if !issues.unused_imports.is_empty() {
+        println!("\n=== UNUSED IMPORTS ===");
+        for (file, import) in &issues.unused_imports {
+            println!("  {} imports '{}'", file.display(), import);
+        }
+    }
+
+    if !issues.unused_files.is_empty() {
+        println!("\n=== UNUSED FILES ===");
+        for file in &issues.unused_files {
+            println!("  {}", file.display());
+        }
+    }
 }
 
-// TODO: Add command line args
-fn main() -> Result<()> {
-    let current_dir = ".";
-    let package_json_path = Path::new(current_dir).join("package.json");
+fn main() -> Result<(), Box<dyn Error>> {
+    let args = Args::parse();
 
-    let package_deps_info = read_package_json_dependencies(&package_json_path)
-        .unwrap_or_else(|e| {
-            eprintln!(
-                "Warning: Could not read or parse package.json at {}: {}. Using empty dependencies.",
-                package_json_path.display(),
-                e
-            );
-            PackageDependencies::default()
-        });
+    let project_base_dir = Path::new(&args.dir);
 
-    let all_dependencies_in_code = process_source_files(current_dir).with_context(|| {
-        format!(
-            "Failed to process source files in directory '{}'",
-            current_dir
-        )
-    })?;
+    let package_info = read_package_json(&args.pkg)?;
+    let dep_info = analyize_project(project_base_dir);
 
-    // Find which dependencies are actually used
-    let found_deps =
-        find_used_dependencies(&all_dependencies_in_code, &package_deps_info.dependencies);
-
-    let found_dev_deps = find_used_dependencies(
-        &all_dependencies_in_code,
-        &package_deps_info.dev_dependencies,
-    );
-
-    let found_peer_deps = find_used_dependencies(
-        &all_dependencies_in_code,
-        &package_deps_info.peer_dependencies,
-    );
-
-    let found_optional_deps = find_used_dependencies(
-        &all_dependencies_in_code,
-        &package_deps_info.optional_dependencies,
-    );
-
-    // Calculate unused dependencies
-    let unused_deps = get_unused_dependencies(&package_deps_info.dependencies, &found_deps);
-
-    let unused_dev_deps =
-        get_unused_dependencies(&package_deps_info.dev_dependencies, &found_dev_deps);
-
-    let unused_peer_deps =
-        get_unused_dependencies(&package_deps_info.peer_dependencies, &found_peer_deps);
-
-    let unused_optional_deps = get_unused_dependencies(
-        &package_deps_info.optional_dependencies,
-        &found_optional_deps,
-    );
-
-    print_unused_dependencies("Dependencies", &unused_deps);
-    print_unused_dependencies("Dev Dependencies", &unused_dev_deps);
-    print_unused_dependencies("Peer Dependencies", &unused_peer_deps);
-    print_unused_dependencies("Optional Dependencies", &unused_optional_deps);
-
-    if unused_deps.is_empty()
-        && unused_dev_deps.is_empty()
-        && unused_peer_deps.is_empty()
-        && unused_optional_deps.is_empty()
-    {
-        println!("✅ No unused dependencies found!");
-    }
+    let issues = check_dependency_graph(dep_info, package_info);
+    print_dependency_issues(&issues);
 
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_is_dependency_used() {
-        // Exact match
-        assert!(is_dependency_used("react", "react"));
-
-        // Subpath imports
-        assert!(is_dependency_used("react/jsx-runtime", "react"));
-        assert!(is_dependency_used("lodash/debounce", "lodash"));
-
-        // Scoped packages
-        assert!(is_dependency_used("@babel/core", "@babel/core"));
-        assert!(is_dependency_used("@babel/core/lib/parser", "@babel/core"));
-
-        // Should not match
-        assert!(!is_dependency_used("react-dom", "react"));
-        assert!(!is_dependency_used("react", "react-dom"));
-        assert!(!is_dependency_used("some-package", "other-package"));
-    }
-
-    #[test]
-    fn test_extract_dependency_names() {
-        let mut deps = HashMap::new();
-        deps.insert("react".to_string(), "^18.0.0".to_string());
-        deps.insert("lodash".to_string(), "^4.17.21".to_string());
-
-        let result = extract_dependency_names(Some(deps));
-        assert_eq!(result.len(), 2);
-        assert!(result.contains("react"));
-        assert!(result.contains("lodash"));
-
-        let empty_result = extract_dependency_names(None);
-        assert!(empty_result.is_empty());
-    }
 }
