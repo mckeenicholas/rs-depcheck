@@ -477,7 +477,7 @@ pub fn parse_and_analyze<P: AsRef<Path>>(allocator: &Allocator, file_path: P) ->
         (file_contents, source_type)
     };
 
-    let parser = Parser::new(&allocator, &source_to_parse, source_type);
+    let parser = Parser::new(allocator, &source_to_parse, source_type);
     let ParserReturn {
         program,
         errors,
@@ -489,7 +489,7 @@ pub fn parse_and_analyze<P: AsRef<Path>>(allocator: &Allocator, file_path: P) ->
     if panicked {
         let error_string = errors
             .iter()
-            .map(|diag| format!("{}", diag))
+            .map(|diag| format!("{diag}"))
             .collect::<Vec<String>>()
             .join("\n");
         return Err(error_string.into());
@@ -498,7 +498,7 @@ pub fn parse_and_analyze<P: AsRef<Path>>(allocator: &Allocator, file_path: P) ->
     let mut analyzer = ModuleAnalyzer::default();
     let analysis = analyzer.analyze_with_module_record(&program, &module_record);
 
-    print!("{}", path_str);
+    print!("{path_str}");
     print_analysis_results(&analysis);
 
     Ok(analysis)

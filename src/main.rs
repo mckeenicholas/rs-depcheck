@@ -81,7 +81,7 @@ fn analyze_project<P: AsRef<Path>>(root_dir: P) -> HashMap<PathBuf, ModuleAnalys
         let dir_entry = match file {
             Ok(dir_entry) => dir_entry,
             Err(e) => {
-                eprintln!("Error: {}", e);
+                eprintln!("Error: {e}");
                 continue;
             }
         };
@@ -107,7 +107,7 @@ fn analyze_project<P: AsRef<Path>>(root_dir: P) -> HashMap<PathBuf, ModuleAnalys
             Ok(module_analysis) => {
                 src_file_info.insert(path.to_owned(), module_analysis);
             }
-            Err(e) => eprintln!("Failed to analyze {:?}: {}", path, e),
+            Err(e) => eprintln!("Failed to analyze {path:?}: {e}"),
         }
 
         // Reset the allocator to free memory for the next file
@@ -218,7 +218,7 @@ fn resolve_import_to_file(
 
     // Try index files
     for ext in TARGET_EXTENSIONS {
-        let index_path = resolved_import_path.join(format!("index.{}", ext));
+        let index_path = resolved_import_path.join(format!("index.{ext}"));
         if let Ok(canonical) = index_path.canonicalize() {
             for (original_path, canonical_path) in file_canonical_paths {
                 if canonical_path == &canonical {
@@ -257,8 +257,8 @@ fn check_dependency_graph(
     for declared_dep in &all_declared_deps {
         let is_used = optimized_data.imported_modules.iter().any(|imported| {
             imported == declared_dep
-                || imported.starts_with(&format!("{}/", declared_dep))
-                || imported.starts_with(&format!("@{}/", declared_dep))
+                || imported.starts_with(&format!("{declared_dep}/"))
+                || imported.starts_with(&format!("@{declared_dep}/"))
         });
 
         if !is_used {
@@ -371,14 +371,14 @@ fn print_dependency_issues(issues: &DependencyIssues) {
     if !issues.unused_dependencies.is_empty() {
         println!("\n=== UNUSED DEPENDENCIES ===");
         for dep in &issues.unused_dependencies {
-            println!("  {}", dep);
+            println!("  {dep}");
         }
     }
 
     if !issues.missing_dependencies.is_empty() {
         println!("\n=== MISSING DEPENDENCIES ===");
         for dep in &issues.missing_dependencies {
-            println!("  {}", dep);
+            println!("  {dep}");
         }
     }
 

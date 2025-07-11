@@ -11,7 +11,7 @@ pub enum HTMLToken {
     Assign,          // =
     Text(String),    // Text content between tags
     Comment(String), // <!-- comment -->
-    EOF,
+    Eof,
 }
 
 #[derive(Debug, Clone)]
@@ -54,7 +54,7 @@ pub struct HTMLLexer {
 impl HTMLLexer {
     pub fn new(input: &str) -> Self {
         let chars: Vec<char> = input.chars().collect();
-        let current_char = chars.get(0).copied();
+        let current_char = chars.first().copied();
 
         Self {
             input: chars,
@@ -65,17 +65,7 @@ impl HTMLLexer {
             state: LexerState::Data,
         }
     }
-
-    /// Tokenizes the entire input string.
-    pub fn tokenize(&mut self) -> Result<Vec<HTMLToken>, LexerError> {
-        while self.current_char.is_some() {
-            self.lex_next()?;
-        }
-
-        self.tokens.push_back(HTMLToken::EOF);
-        Ok(self.tokens.drain(..).collect())
-    }
-
+    
     /// Processes the next character based on the current lexer state.
     fn lex_next(&mut self) -> Result<(), LexerError> {
         match self.state {
@@ -138,7 +128,7 @@ impl HTMLLexer {
             }
             _ => {
                 return Err(LexerError {
-                    message: format!("Unexpected character '{}' inside a tag", ch),
+                    message: format!("Unexpected character '{ch}' inside a tag"),
                     position: self.position,
                 });
             }
@@ -314,7 +304,7 @@ impl HTMLLexer {
         while self.tokens.is_empty() && self.current_char.is_some() {
             self.lex_next()?;
         }
-        Ok(self.tokens.pop_front().unwrap_or(HTMLToken::EOF))
+        Ok(self.tokens.pop_front().unwrap_or(HTMLToken::Eof))
     }
 }
 
@@ -337,7 +327,7 @@ mod tests {
                 HTMLToken::Slash,
                 HTMLToken::Ident("div".to_string()),
                 HTMLToken::CloseBracket,
-                HTMLToken::EOF,
+                HTMLToken::Eof,
             ]
         );
     }
@@ -357,7 +347,7 @@ mod tests {
                 HTMLToken::Slash,
                 HTMLToken::Ident("h1".to_string()),
                 HTMLToken::CloseBracket,
-                HTMLToken::EOF,
+                HTMLToken::Eof,
             ]
         );
     }
@@ -423,7 +413,7 @@ mod tests {
             HTMLToken::Slash,
             HTMLToken::Ident("template".to_string()),
             HTMLToken::CloseBracket,
-            HTMLToken::EOF,
+            HTMLToken::Eof,
         ];
 
         // For debugging:

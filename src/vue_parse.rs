@@ -3,22 +3,18 @@ use std::{fs::File, io::Read};
 mod vue;
 use vue::parser::Parser as VueTemplateParser;
 
-use crate::vue::parser::{self, Attribute, Element, Node};
+use crate::vue::parser::{Attribute, Element, Node};
 
 use oxc::{
     allocator::Allocator,
     ast::ast::*,
-    ast_visit::Visit,
-    parser::{Parser, ParserReturn},
-    semantic::ScopeFlags,
-    span::Span,
-    syntax::module_record::{ExportEntry, ExportExportName, ImportImportName, ModuleRecord},
+    parser::Parser,
 };
 
 fn main() {
-    const file_src: &str = "test.vue";
+    const TEST_FILE_SRC: &str = "test.vue";
 
-    let mut fs = File::open(file_src).unwrap();
+    let mut fs = File::open(TEST_FILE_SRC).unwrap();
     let mut file_contents = vec![];
 
     fs.read_to_end(&mut file_contents).unwrap();
@@ -43,7 +39,7 @@ fn process_ast(ast: Node) {
 fn process_element(element: Element) {
     // If the tag name isn't a native dom element, add it to a list of used deps
 
-    for attr in element.attributes {
+    for attr in element.attributes { 
         process_attribute(attr);
     }
 
@@ -58,7 +54,7 @@ fn process_attribute(attr: Attribute) {
     if value.is_none() {
         if name.starts_with(":") {
             let ref_name = name.clone().split_off(1);
-            println!("{}\n", ref_name);
+            println!("{ref_name}\n");
         } else {
             return;
         }
@@ -70,7 +66,7 @@ fn process_attribute(attr: Attribute) {
         let parser_allocator = Allocator::new();
         let expr = Parser::new(&parser_allocator, &value_str, SourceType::cjs()).parse_expression().expect("expr parse error");
 
-        println!("{:?}\n", expr);
+        println!("{expr:?}\n");
     }
 }
 
@@ -78,5 +74,5 @@ fn process_expr(expr: String) {
             let parser_allocator = Allocator::new();
         let expr = Parser::new(&parser_allocator, &expr, SourceType::cjs()).parse_expression().expect("expr parse error");
 
-        println!("{:?}\n", expr);
+        println!("{expr:?}\n");
 }

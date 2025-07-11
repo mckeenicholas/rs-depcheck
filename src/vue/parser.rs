@@ -95,7 +95,7 @@ impl Parser {
     /// The main entry point for parsing. Produces a list of root nodes.
     pub fn parse(&mut self) -> Result<Vec<Node>, ParserError> {
         let mut nodes = Vec::new();
-        while self.current_token != HTMLToken::EOF {
+        while self.current_token != HTMLToken::Eof {
             if let Some(node) = self.parse_node()? {
                 nodes.push(node);
             }
@@ -235,7 +235,7 @@ impl Parser {
                             self.advance()?; // Consume tag name
                             if self.current_token != HTMLToken::CloseBracket {
                                 return Err(ParserError {
-                                    message: format!("Expected '>' to close tag '{}'", parent_tag),
+                                    message: format!("Expected '>' to close tag '{parent_tag}'"),
                                 });
                             }
                             self.advance()?; // Consume '>'
@@ -253,9 +253,9 @@ impl Parser {
                 }
             }
 
-            if self.current_token == HTMLToken::EOF {
+            if self.current_token == HTMLToken::Eof {
                 return Err(ParserError {
-                    message: format!("Unclosed tag '{}'", parent_tag),
+                    message: format!("Unclosed tag '{parent_tag}'"),
                 });
             }
 
