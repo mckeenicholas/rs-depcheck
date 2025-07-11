@@ -1,0 +1,282 @@
+warning: fields `imports_by_module` and `canonical_to_original` are never read
+  --> src/main.rs:53:5
+   |
+49 | struct OptimizedDependencyData {
+   |        ----------------------- fields in this struct
+...
+53 |     imports_by_module: HashMap<String, Vec<(PathBuf, String)>>,
+   |     ^^^^^^^^^^^^^^^^^
+...
+59 |     canonical_to_original: HashMap<PathBuf, PathBuf>,
+   |     ^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `OptimizedDependencyData` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+   = note: `#[warn(dead_code)]` on by default
+
+warning: accessing first element with `chars.get(0)`
+  --> src/vue/lexer.rs:57:28
+   |
+57 |         let current_char = chars.get(0).copied();
+   |                            ^^^^^^^^^^^^ help: try: `chars.first()`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#get_first
+   = note: `#[warn(clippy::get_first)]` on by default
+
+warning: variables can be used directly in the `format!` string
+   --> src/vue/lexer.rs:141:30
+    |
+141 |                     message: format!("Unexpected character '{}' inside a tag", ch),
+    |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#uninlined_format_args
+    = note: `#[warn(clippy::uninlined_format_args)]` on by default
+help: change this to
+    |
+141 -                     message: format!("Unexpected character '{}' inside a tag", ch),
+141 +                     message: format!("Unexpected character '{ch}' inside a tag"),
+    |
+
+warning: variables can be used directly in the `format!` string
+   --> src/vue/parser.rs:238:46
+    |
+238 | ...                   message: format!("Expected '>' to close tag '{}'", parent_tag),
+    |                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#uninlined_format_args
+help: change this to
+    |
+238 -                                     message: format!("Expected '>' to close tag '{}'", parent_tag),
+238 +                                     message: format!("Expected '>' to close tag '{parent_tag}'"),
+    |
+
+warning: variables can be used directly in the `format!` string
+   --> src/vue/parser.rs:258:30
+    |
+258 |                     message: format!("Unclosed tag '{}'", parent_tag),
+    |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#uninlined_format_args
+help: change this to
+    |
+258 -                     message: format!("Unclosed tag '{}'", parent_tag),
+258 +                     message: format!("Unclosed tag '{parent_tag}'"),
+    |
+
+warning: this expression creates a reference which is immediately dereferenced by the compiler
+   --> src/parser.rs:480:30
+    |
+480 |     let parser = Parser::new(&allocator, &source_to_parse, source_type);
+    |                              ^^^^^^^^^^ help: change this to: `allocator`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#needless_borrow
+    = note: `#[warn(clippy::needless_borrow)]` on by default
+
+warning: variables can be used directly in the `format!` string
+   --> src/parser.rs:492:25
+    |
+492 |             .map(|diag| format!("{}", diag))
+    |                         ^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#uninlined_format_args
+help: change this to
+    |
+492 -             .map(|diag| format!("{}", diag))
+492 +             .map(|diag| format!("{diag}"))
+    |
+
+warning: variables can be used directly in the `format!` string
+   --> src/parser.rs:501:5
+    |
+501 |     print!("{}", path_str);
+    |     ^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#uninlined_format_args
+help: change this to
+    |
+501 -     print!("{}", path_str);
+501 +     print!("{path_str}");
+    |
+
+warning: variables can be used directly in the `format!` string
+  --> src/main.rs:84:17
+   |
+84 |                 eprintln!("Error: {}", e);
+   |                 ^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#uninlined_format_args
+help: change this to
+   |
+84 -                 eprintln!("Error: {}", e);
+84 +                 eprintln!("Error: {e}");
+   |
+
+warning: variables can be used directly in the `format!` string
+   --> src/main.rs:110:23
+    |
+110 |             Err(e) => eprintln!("Failed to analyze {:?}: {}", path, e),
+    |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#uninlined_format_args
+help: change this to
+    |
+110 -             Err(e) => eprintln!("Failed to analyze {:?}: {}", path, e),
+110 +             Err(e) => eprintln!("Failed to analyze {path:?}: {e}"),
+    |
+
+warning: variables can be used directly in the `format!` string
+   --> src/main.rs:221:52
+    |
+221 |         let index_path = resolved_import_path.join(format!("index.{}", ext));
+    |                                                    ^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#uninlined_format_args
+help: change this to
+    |
+221 -         let index_path = resolved_import_path.join(format!("index.{}", ext));
+221 +         let index_path = resolved_import_path.join(format!("index.{ext}"));
+    |
+
+warning: variables can be used directly in the `format!` string
+   --> src/main.rs:260:42
+    |
+260 |                 || imported.starts_with(&format!("{}/", declared_dep))
+    |                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#uninlined_format_args
+help: change this to
+    |
+260 -                 || imported.starts_with(&format!("{}/", declared_dep))
+260 +                 || imported.starts_with(&format!("{declared_dep}/"))
+    |
+
+warning: variables can be used directly in the `format!` string
+   --> src/main.rs:261:42
+    |
+261 |                 || imported.starts_with(&format!("@{}/", declared_dep))
+    |                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#uninlined_format_args
+help: change this to
+    |
+261 -                 || imported.starts_with(&format!("@{}/", declared_dep))
+261 +                 || imported.starts_with(&format!("@{declared_dep}/"))
+    |
+
+warning: variables can be used directly in the `format!` string
+   --> src/main.rs:374:13
+    |
+374 |             println!("  {}", dep);
+    |             ^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#uninlined_format_args
+help: change this to
+    |
+374 -             println!("  {}", dep);
+374 +             println!("  {dep}");
+    |
+
+warning: variables can be used directly in the `format!` string
+   --> src/main.rs:381:13
+    |
+381 |             println!("  {}", dep);
+    |             ^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#uninlined_format_args
+help: change this to
+    |
+381 -             println!("  {}", dep);
+381 +             println!("  {dep}");
+    |
+
+warning: unused import: `self`
+ --> src/vue_parse.rs:6:26
+  |
+6 | use crate::vue::parser::{self, Attribute, Element, Node};
+  |                          ^^^^
+  |
+  = note: `#[warn(unused_imports)]` on by default
+
+warning: unused imports: `ExportEntry`, `ExportExportName`, `ImportImportName`, `ModuleRecord`, `ParserReturn`, `ast_visit::Visit`, `semantic::ScopeFlags`, and `span::Span`
+  --> src/vue_parse.rs:11:5
+   |
+11 |     ast_visit::Visit,
+   |     ^^^^^^^^^^^^^^^^
+12 |     parser::{Parser, ParserReturn},
+   |                      ^^^^^^^^^^^^
+13 |     semantic::ScopeFlags,
+   |     ^^^^^^^^^^^^^^^^^^^^
+14 |     span::Span,
+   |     ^^^^^^^^^^
+15 |     syntax::module_record::{ExportEntry, ExportExportName, ImportImportName, ModuleRecord},
+   |                             ^^^^^^^^^^^  ^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^
+
+warning: method `tokenize` is never used
+  --> src/vue/lexer.rs:70:12
+   |
+54 | impl HTMLLexer {
+   | -------------- method in this implementation
+...
+70 |     pub fn tokenize(&mut self) -> Result<Vec<HTMLToken>, LexerError> {
+   |            ^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` on by default
+
+warning: name `EOF` contains a capitalized acronym
+  --> src/vue/lexer.rs:14:5
+   |
+14 |     EOF,
+   |     ^^^ help: consider making the acronym lowercase, except the initial letter (notice the capitalization): `Eof`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#upper_case_acronyms
+   = note: `#[warn(clippy::upper_case_acronyms)]` on by default
+
+warning: variables can be used directly in the `format!` string
+  --> src/vue_parse.rs:61:13
+   |
+61 |             println!("{}\n", ref_name);
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#uninlined_format_args
+help: change this to
+   |
+61 -             println!("{}\n", ref_name);
+61 +             println!("{ref_name}\n");
+   |
+
+warning: variables can be used directly in the `format!` string
+  --> src/vue_parse.rs:73:9
+   |
+73 |         println!("{:?}\n", expr);
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#uninlined_format_args
+help: change this to
+   |
+73 -         println!("{:?}\n", expr);
+73 +         println!("{expr:?}\n");
+   |
+
+warning: variables can be used directly in the `format!` string
+  --> src/vue_parse.rs:81:9
+   |
+81 |         println!("{:?}\n", expr);
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#uninlined_format_args
+help: change this to
+   |
+81 -         println!("{:?}\n", expr);
+81 +         println!("{expr:?}\n");
+   |
+
+warning: constant `file_src` should have an upper case name
+  --> src/vue_parse.rs:19:11
+   |
+19 |     const file_src: &str = "test.vue";
+   |           ^^^^^^^^ help: convert the identifier to upper case: `FILE_SRC`
+   |
+   = note: `#[warn(non_upper_case_globals)]` on by default
+
+warning: `dcrs` (bin "main") generated 15 warnings (run `cargo clippy --fix --bin "main"` to apply 14 suggestions)
+warning: `dcrs` (bin "vue") generated 12 warnings (4 duplicates) (run `cargo clippy --fix --bin "vue"` to apply 5 suggestions)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.03s
