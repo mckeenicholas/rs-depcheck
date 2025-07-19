@@ -2,12 +2,10 @@ use once_cell::sync::Lazy;
 use oxc::ast::ast::IdentifierReference;
 use oxc::ast_visit::Visit;
 use oxc::parser::Parser;
-use oxc::syntax::identifier;
 use oxc::{allocator::Allocator, span::SourceType};
 use regex::Regex;
 use std::collections::HashSet;
 use std::error::Error;
-use std::{default, vec};
 
 use crate::js::analyze_project::analyze_js;
 use crate::js::js_parser::ModuleAnalysis;
