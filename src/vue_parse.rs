@@ -5,11 +5,7 @@ use vue::parser::Parser as VueTemplateParser;
 
 use crate::vue::parser::{Attribute, Element, Node};
 
-use oxc::{
-    allocator::Allocator,
-    ast::ast::*,
-    parser::Parser,
-};
+use oxc::{allocator::Allocator, ast::ast::*, parser::Parser};
 
 fn main() {
     const TEST_FILE_SRC: &str = "test.vue";
@@ -39,7 +35,7 @@ fn process_ast(ast: Node) {
 fn process_element(element: Element) {
     // If the tag name isn't a native dom element, add it to a list of used deps
 
-    for attr in element.attributes { 
+    for attr in element.attributes {
         process_attribute(attr);
     }
 
@@ -64,15 +60,19 @@ fn process_attribute(attr: Attribute) {
         let value_str = value.unwrap();
 
         let parser_allocator = Allocator::new();
-        let expr = Parser::new(&parser_allocator, &value_str, SourceType::cjs()).parse_expression().expect("expr parse error");
+        let expr = Parser::new(&parser_allocator, &value_str, SourceType::cjs())
+            .parse_expression()
+            .expect("expr parse error");
 
         println!("{expr:?}\n");
     }
 }
 
 fn process_expr(expr: String) {
-            let parser_allocator = Allocator::new();
-        let expr = Parser::new(&parser_allocator, &expr, SourceType::cjs()).parse_expression().expect("expr parse error");
+    let parser_allocator = Allocator::new();
+    let expr = Parser::new(&parser_allocator, &expr, SourceType::cjs())
+        .parse_expression()
+        .expect("expr parse error");
 
-        println!("{expr:?}\n");
+    println!("{expr:?}\n");
 }

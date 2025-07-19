@@ -65,7 +65,7 @@ impl HTMLLexer {
             state: LexerState::Data,
         }
     }
-    
+
     /// Processes the next character based on the current lexer state.
     fn lex_next(&mut self) -> Result<(), LexerError> {
         match self.state {
@@ -76,7 +76,9 @@ impl HTMLLexer {
 
     /// Handles tokenization when in the `Data` state (outside of tags).
     fn lex_data_state(&mut self) -> Result<(), LexerError> {
-        if self.current_char == Some('<') {
+        if self.current_char == Some('{') && self.peek() == Some('{') {
+            self.read_interpolation()
+        } else if self.current_char == Some('<') {
             // A '<' could be the start of a tag or a comment.
             self.handle_open_bracket()
         } else {
@@ -127,6 +129,8 @@ impl HTMLLexer {
                 self.read_identifier();
             }
             _ => {
+                println!("{ch}, {:?}", self);
+
                 return Err(LexerError {
                     message: format!("Unexpected character '{ch}' inside a tag"),
                     position: self.position,
@@ -200,6 +204,34 @@ impl HTMLLexer {
 
         Err(LexerError {
             message: "Unterminated comment".to_string(),
+            position: start_position,
+        })
+    }
+
+    /// Reads an interpolation from `{{` to `}}`.
+    fn read_interpolation(&mut self) -> Result<(), LexerError> {
+        let start_position = self.position;
+
+        // Skip "{{"
+        self.advance();
+        self.advance();
+
+        let mut content = String::new();
+        while let Some(ch) = self.current_char {
+            if ch == '}' && self.peek() == Some('}') {
+                // Found end of interpolation "}}"
+                self.advance(); // Skip first '}'
+                self.advance(); // Skip second '}'
+                self.tokens
+                    .push_back(HTMLToken::Text(format!("{{{{ {} }}}}", content.trim())));
+                return Ok(());
+            }
+            content.push(ch);
+            self.advance();
+        }
+
+        Err(LexerError {
+            message: "Unterminated interpolation".to_string(),
             position: start_position,
         })
     }
@@ -305,6 +337,21 @@ impl HTMLLexer {
             self.lex_next()?;
         }
         Ok(self.tokens.pop_front().unwrap_or(HTMLToken::Eof))
+    }
+
+    /// Consumes the entire input and collects all tokens into a vector.
+    /// This method is typically used to tokenize the complete input at once.
+    pub fn tokenize(&mut self) -> Result<Vec<HTMLToken>, LexerError> {
+        let mut tokens = Vec::new();
+        loop {
+            let token = self.next_token()?;
+            if token == HTMLToken::Eof {
+                tokens.push(token);
+                break;
+            }
+            tokens.push(token);
+        }
+        Ok(tokens)
     }
 }
 

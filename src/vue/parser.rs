@@ -1,7 +1,6 @@
 use crate::vue::lexer::{HTMLLexer, HTMLToken, LexerError};
 use std::fmt;
 
-
 /// Represents a node in the HTML/Vue template AST.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Node {

@@ -5,25 +5,21 @@ use std::{
     error::Error,
     path::Path,
 };
-use walkdir::{DirEntry, WalkDir};
 
-// Add this import
-use oxc::allocator::Allocator;
-
-use parser::parse_and_analyze;
-
+pub mod js;
 pub mod vue;
 
+use js::analyze_project::analyze_project;
+
 pub mod package_json_reader;
-pub mod parser;
 
 use package_json_reader::read_package_json;
 
-use crate::{package_json_reader::PackageDependencies, parser::ModuleAnalysis};
+use crate::js::analyze_project::TARGET_EXTENSIONS;
+use crate::js::js_parser::ModuleAnalysis;
+use crate::package_json_reader::PackageDependencies;
 
 const DEFAULT_PACKAGE_JSON_PATH: &str = "package.json";
-const TARGET_EXTENSIONS: &[&str] = &["js", "jsx", "ts", "tsx", "vue", "svelte"];
-const SKIP_DIRS: &[&str] = &["node_modules", "dist", "build"];
 
 #[derive(Parser)]
 struct Args {
@@ -59,62 +55,6 @@ struct OptimizedDependencyData {
     canonical_to_original: HashMap<PathBuf, PathBuf>,
     // All unused imports from individual file analysis
     unused_imports: Vec<(PathBuf, String)>,
-}
-
-fn in_ignore_list(entry: &DirEntry) -> bool {
-    entry
-        .file_name()
-        .to_str()
-        .map(|s| (s != "." && s.starts_with(".")) || SKIP_DIRS.contains(&s))
-        .unwrap_or(false)
-}
-
-fn analyze_project<P: AsRef<Path>>(root_dir: P) -> HashMap<PathBuf, ModuleAnalysis> {
-    let mut src_file_info = HashMap::new();
-    // Create the allocator once
-    let mut allocator = Allocator::new();
-
-    let walker = WalkDir::new(root_dir)
-        .into_iter()
-        .filter_entry(|e| !in_ignore_list(e));
-    for file in walker {
-        let dir_entry = match file {
-            Ok(dir_entry) => dir_entry,
-            Err(e) => {
-                eprintln!("Error: {e}");
-                continue;
-            }
-        };
-
-        let path = dir_entry.path();
-
-        if !dir_entry.file_type().is_file() {
-            continue;
-        }
-
-        let extension = match path.extension() {
-            Some(ext) => ext.to_str().unwrap_or(""),
-            None => continue,
-        };
-
-        if !TARGET_EXTENSIONS.contains(&extension) {
-            continue;
-        }
-
-        // Pass the allocator to the parsing function
-        let results = parse_and_analyze(&allocator, path);
-        match results {
-            Ok(module_analysis) => {
-                src_file_info.insert(path.to_owned(), module_analysis);
-            }
-            Err(e) => eprintln!("Failed to analyze {path:?}: {e}"),
-        }
-
-        // Reset the allocator to free memory for the next file
-        allocator.reset();
-    }
-
-    src_file_info
 }
 
 fn build_optimized_data(deps: &HashMap<PathBuf, ModuleAnalysis>) -> OptimizedDependencyData {
